@@ -3,6 +3,7 @@ import 'package:healthapp/models/health_record.dart';
 import 'package:healthapp/database/database_helper.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:healthapp/screens/home/home_screen.dart';
 
 class HealthRecordScreen extends StatefulWidget {
   final RecordType recordType;
@@ -21,6 +22,8 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
   final Map<String, TextEditingController> _controllers = {};
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
   DateTime _selectedDate = DateTime.now();
+  TimeOfDay _selectedTime = TimeOfDay.now();
+
   @override
   void initState() {
     super.initState();
@@ -44,6 +47,8 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
       case RecordType.waistCircumference:
         _controllers['value'] = TextEditingController();
         break;
+      case RecordType.history:
+        break;
     }
   }
 
@@ -61,9 +66,17 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
       values[key] = controller.text;
     });
 
+    final time = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+      _selectedTime.hour,
+      _selectedTime.minute,
+    );
+
     final record = HealthRecord(
       type: widget.recordType,
-      date: _selectedDate,
+      date: time,
       recordValues: values,
     );
 
@@ -73,6 +86,13 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('건강 정보가 저장되었습니다')),
       );
+
+      // 저장 완료 후 약간의 지연 시간을 두고 이력 화면으로 이동
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (mounted) {
+          context.go('/history');
+        }
+      });
     }
   }
 
@@ -85,7 +105,7 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
+          onPressed: () => context.go('/'),
         ),
         title: Row(
           mainAxisSize: MainAxisSize.min,
@@ -112,9 +132,7 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
               children: [
                 // 날짜 및 시간 선택 위젯
                 _buildDateTimeSelector(),
-
                 const SizedBox(height: 24),
-
                 // 입력 폼
                 Form(
                   key: _formKey,
@@ -193,6 +211,7 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
                       initialDate: _selectedDate,
                       firstDate: DateTime(2000),
                       lastDate: DateTime.now(),
+                      locale: const Locale('ko', 'KR'),
                       builder: (context, child) {
                         return Theme(
                           data: Theme.of(context).copyWith(
@@ -222,7 +241,7 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          DateFormat('yyyy-MM-dd').format(DateTime.now()),
+                          DateFormat('yyyy. MM. dd').format(_selectedDate),
                           style: const TextStyle(fontSize: 16),
                         ),
                         const Icon(Icons.calendar_today, size: 18),
@@ -236,6 +255,26 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
                 child: InkWell(
                   onTap: () {
                     // 시간 선택 다이얼로그 표시
+                    showTimePicker(
+                      context: context,
+                      initialTime: _selectedTime,
+                      builder: (context, child) {
+                        return Theme(
+                          data: Theme.of(context).copyWith(
+                            colorScheme: ColorScheme.light(
+                              primary: _getColorForRecordType(),
+                            ),
+                          ),
+                          child: child!,
+                        );
+                      },
+                    ).then((selectedTime) {
+                      if (selectedTime != null) {
+                        setState(() {
+                          _selectedTime = selectedTime;
+                        });
+                      }
+                    });
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(
@@ -248,7 +287,7 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          DateFormat('HH:mm').format(DateTime.now()),
+                          _getTimeDisplayString(_selectedTime),
                           style: const TextStyle(fontSize: 16),
                         ),
                         const Icon(Icons.access_time, size: 18),
@@ -286,6 +325,8 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
         return [
           _buildInputField('허리둘레', '허리둘레를 입력하세요 (cm)', 'value'),
         ];
+      case RecordType.history:
+        return [];
     }
   }
 
@@ -344,6 +385,8 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
         return Icons.monitor_weight;
       case RecordType.waistCircumference:
         return Icons.straighten;
+      case RecordType.history:
+        return Icons.history;
     }
   }
 
@@ -357,6 +400,12 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
         return const Color(0xFF81C784);
       case RecordType.waistCircumference:
         return const Color(0xFFFFB74D);
+      case RecordType.history:
+        return Colors.grey.shade400;
     }
+  }
+
+  String _getTimeDisplayString(TimeOfDay time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 }

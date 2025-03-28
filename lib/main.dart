@@ -5,12 +5,16 @@ import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // 한국어 로케일 데이터 초기화
   await initializeDateFormatting('ko_KR', null);
+
+  // 기본 로케일 설정
+  Intl.defaultLocale = 'ko_KR';
 
   // 앱 시작 시 DB 초기화
   final dbHelper = DatabaseHelper.instance;
@@ -48,10 +52,18 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp.router(
       title: '건강 기록 앱',
+      locale: const Locale('ko', 'KR'),
+      // 로컬라이제이션 대리자 추가
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      // 지원하는 로케일 설정
+      supportedLocales: const [
+        Locale('ko', 'KR'),
+        Locale('en', 'US'), // 폴백 로케일
+      ],
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF4CAF50),
+          seedColor: Colors.blue,
           brightness: Brightness.light,
         ),
         fontFamily: 'Pretendard',

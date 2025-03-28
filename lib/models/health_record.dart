@@ -5,6 +5,7 @@ enum RecordType {
   bloodSugar,
   weight,
   waistCircumference,
+  history,
 }
 
 class HealthRecord {
@@ -70,6 +71,8 @@ class HealthRecord {
         return '체중';
       case RecordType.waistCircumference:
         return '허리둘레';
+      case RecordType.history:
+        return '건강 기록 이력';
     }
   }
 
@@ -89,6 +92,13 @@ class HealthRecord {
         return '${recordValues['value']} kg';
       case RecordType.waistCircumference:
         return '${recordValues['value']} cm';
+      case RecordType.history:
+        return '건강 기록 이력';
     }
+  }
+
+  // 날짜와 함께 요약 반환
+  String getSummaryWithDate() {
+    return DateFormat('yyyy년 MM월 dd일 HH:mm', 'ko').format(date);
   }
 }

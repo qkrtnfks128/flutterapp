@@ -4,6 +4,7 @@ import 'package:healthapp/models/health_record.dart';
 import 'package:healthapp/database/database_helper.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'dart:math' as math;
 
 class RecordHistoryScreen extends StatefulWidget {
   const RecordHistoryScreen({super.key});
@@ -25,21 +26,38 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen>
     super.initState();
     _tabController = TabController(length: 5, vsync: this);
 
-    _loadRecords();
+    // 한국어 로케일 초기화
+    initializeDateFormatting('ko_KR', null).then((_) {
+      _loadRecords();
+    });
   }
 
   Future<void> _loadRecords() async {
     try {
-      final allRecords = await _dbHelper.getAllHealthRecords();
+      debugPrint('기록 로딩 시작');
+      setState(() {
+        _isLoading = true;
+      });
 
-      // 모든 기록을 가져온 후 타입별로 분류
+      // 모든 기록 로드
+      final allRecords = await _dbHelper.getAllHealthRecords();
+      debugPrint('전체 기록 로드 완료: ${allRecords.length}개');
+
+      // 타입별 기록 로드
       final bloodPressure =
           await _dbHelper.getHealthRecordsByType(RecordType.bloodPressure);
+      debugPrint('혈압 기록 로드 완료: ${bloodPressure.length}개');
+
       final bloodSugar =
           await _dbHelper.getHealthRecordsByType(RecordType.bloodSugar);
+      debugPrint('혈당 기록 로드 완료: ${bloodSugar.length}개');
+
       final weight = await _dbHelper.getHealthRecordsByType(RecordType.weight);
+      debugPrint('체중 기록 로드 완료: ${weight.length}개');
+
       final waist =
           await _dbHelper.getHealthRecordsByType(RecordType.waistCircumference);
+      debugPrint('허리둘레 기록 로드 완료: ${waist.length}개');
 
       if (mounted) {
         setState(() {
@@ -49,18 +67,43 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen>
         });
       }
     } catch (e) {
-      print('Error loading records: $e');
+      debugPrint('기록 로드 오류: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
+
+        // 오류 메시지 표시
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                '데이터 로드 중 오류가 발생했습니다: ${e.toString().substring(0, math.min(100, e.toString().length))}'),
+            backgroundColor: Colors.red.shade700,
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: '확인',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
+        );
       }
     }
   }
 
   Future<void> _deleteRecord(HealthRecord record) async {
-    await _dbHelper.deleteHealthRecord(record.id!);
-    _loadRecords();
+    try {
+      await _dbHelper.deleteHealthRecord(record.id!);
+      debugPrint('기록 삭제 완료: ID ${record.id}');
+      _loadRecords();
+    } catch (e) {
+      debugPrint('기록 삭제 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('기록 삭제 중 오류가 발생했습니다')),
+        );
+      }
+    }
   }
 
   @override
@@ -75,6 +118,10 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen>
     return Scaffold(
       backgroundColor: colorScheme.background,
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.go('/'),
+        ),
         title: const Text(
           '건강 기록 이력',
           style: TextStyle(fontWeight: FontWeight.bold),
@@ -86,12 +133,14 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen>
           labelColor: colorScheme.primary,
           unselectedLabelColor: colorScheme.onSurfaceVariant,
           labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+          isScrollable: false,
+          indicatorSize: TabBarIndicatorSize.tab,
           tabs: const [
             Tab(text: '전체'),
             Tab(text: '혈압'),
             Tab(text: '혈당'),
             Tab(text: '체중'),
-            Tab(text: '허리'),
+            Tab(text: '허리둘레'),
           ],
         ),
       ),
@@ -134,24 +183,19 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen>
       );
     }
 
-    // 날짜별로 그룹화
-    final groupedRecords = <String, List<HealthRecord>>{};
-    for (final record in records) {
-      final dateKey = DateFormat('yyyy-MM-dd').format(record.date);
-      if (!groupedRecords.containsKey(dateKey)) {
-        groupedRecords[dateKey] = [];
-      }
-      groupedRecords[dateKey]!.add(record);
-    }
+    // 데이터를 날짜별로 그룹화
+    Map<String, List<HealthRecord>> groupedRecords =
+        _groupRecordsByDate(records);
 
-    final sortedDates = groupedRecords.keys.toList()
+    // 날짜별로 내림차순 정렬 (최신 날짜가 먼저 표시)
+    List<String> sortedKeys = groupedRecords.keys.toList()
       ..sort((a, b) => b.compareTo(a));
 
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: sortedDates.length,
+      itemCount: sortedKeys.length,
       itemBuilder: (context, index) {
-        final dateKey = sortedDates[index];
+        final dateKey = sortedKeys[index];
         final dayRecords = groupedRecords[dateKey]!;
 
         return Column(
@@ -160,7 +204,7 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen>
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Text(
-                _formatDateHeader(dateKey),
+                _formatDateHeader(dateKey, context),
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 16,
@@ -170,14 +214,38 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen>
             ),
             ...dayRecords.map((record) => _buildRecordCard(record)).toList(),
             const SizedBox(height: 8),
-            if (index < sortedDates.length - 1) const Divider(),
+            if (index < sortedKeys.length - 1) const Divider(),
           ],
         );
       },
     );
   }
 
-  String _formatDateHeader(String dateKey) {
+  // 데이터를 날짜별로 그룹화
+  Map<String, List<HealthRecord>> _groupRecordsByDate(
+      List<HealthRecord> records) {
+    final Map<String, List<HealthRecord>> grouped = {};
+
+    for (var record in records) {
+      // 날짜 키 생성 (yyyy-MM-dd 형태)
+      final dateKey = DateFormat('yyyy-MM-dd').format(record.date);
+
+      if (!grouped.containsKey(dateKey)) {
+        grouped[dateKey] = [];
+      }
+      grouped[dateKey]!.add(record);
+    }
+
+    // 날짜별로 내림차순 정렬 (최신 날짜가 먼저 표시)
+    final sortedKeys = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+
+    return {
+      for (var key in sortedKeys) key: grouped[key]!,
+    };
+  }
+
+  // 날짜 섹션 헤더 포맷팅
+  String _formatDateHeader(String dateKey, BuildContext context) {
     final now = DateTime.now();
     final today = DateFormat('yyyy-MM-dd').format(now);
     final yesterday =
@@ -188,6 +256,7 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen>
     } else if (dateKey == yesterday) {
       return '어제';
     } else {
+      // 날짜 포맷팅
       final date = DateFormat('yyyy-MM-dd').parse(dateKey);
       return DateFormat('yyyy년 MM월 dd일 (E)', 'ko').format(date);
     }
@@ -213,6 +282,10 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen>
       case RecordType.waistCircumference:
         cardColor = const Color(0xFFFFB74D).withOpacity(0.12);
         cardIcon = Icons.straighten;
+        break;
+      case RecordType.history:
+        cardColor = Colors.grey.shade100;
+        cardIcon = Icons.history;
         break;
     }
 
@@ -309,6 +382,26 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen>
         return const Color(0xFF81C784);
       case RecordType.waistCircumference:
         return const Color(0xFFFFB74D);
+      case RecordType.history:
+        return Colors.grey.shade400;
     }
+  }
+
+  // 날짜 포맷팅 함수
+  String _formatDate(DateTime date) {
+    // 년월일 포맷팅 (한글 로케일 적용)
+    return DateFormat('yyyy년 MM월 dd일', 'ko').format(date);
+  }
+
+  // 시간 포맷팅 함수
+  String _formatTime(DateTime date) {
+    // 오전/오후 시:분 포맷팅 (한글 로케일 적용)
+    return DateFormat('a h:mm', 'ko').format(date);
+  }
+
+  // 날짜와 시간을 함께 포맷팅하는 함수
+  String _formatDateTime(DateTime date) {
+    // 년월일 오전/오후 시:분 포맷팅 (한글 로케일 적용)
+    return DateFormat('yyyy년 MM월 dd일 a h:mm', 'ko').format(date);
   }
 }
